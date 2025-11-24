@@ -17,7 +17,7 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   bool _isLoading = true;
-  bool _error = false;
+  String _errorMessage = '';
 
   @override
   void initState() {
@@ -27,15 +27,18 @@ class _MyAppState extends State<MyApp> {
 
   Future<void> _initializeApp() async {
     try {
+      print('🚀 Inicializando aplicação...');
       await HiveService.init();
+      
       setState(() {
         _isLoading = false;
       });
+      
     } catch (e) {
-      print('Erro na inicialização: $e');
+      print('❌ Erro na inicialização: $e');
       setState(() {
         _isLoading = false;
-        _error = true;
+        _errorMessage = e.toString();
       });
     }
   }
@@ -50,7 +53,7 @@ class _MyAppState extends State<MyApp> {
       ),
       home: _isLoading
           ? const LoadingScreen()
-          : _error
+          : _errorMessage.isNotEmpty
               ? _buildErrorScreen()
               : const HomeScreen(),
       debugShowCheckedModeBanner: false,
@@ -72,16 +75,17 @@ class _MyAppState extends State<MyApp> {
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 10),
-              const Text(
-                'Por favor, recarregue a página ou tente novamente mais tarde.',
+              Text(
+                _errorMessage,
                 textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.red),
               ),
               const SizedBox(height: 20),
               ElevatedButton(
                 onPressed: () {
                   setState(() {
                     _isLoading = true;
-                    _error = false;
+                    _errorMessage = '';
                   });
                   _initializeApp();
                 },

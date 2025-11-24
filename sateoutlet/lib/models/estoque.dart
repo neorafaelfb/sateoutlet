@@ -26,4 +26,25 @@ class Estoque {
     required this.status,
     required this.dataAtualizacao,
   });
+
+  // Para Shared Preferences
+  Map<String, dynamic> toMap() {
+    return {
+      'idEstoque': idEstoque,
+      'idMovel': idMovel,
+      'localizacaoFisica': localizacaoFisica,
+      'status': status,
+      'dataAtualizacao': dataAtualizacao.toIso8601String(),
+    };
+  }
+
+  factory Estoque.fromMap(Map<String, dynamic> map) {
+    return Estoque(
+      idEstoque: map['idEstoque'] as int,
+      idMovel: map['idMovel'] as int,
+      localizacaoFisica: map['localizacaoFisica'] as String,
+      status: map['status'] as String,
+      dataAtualizacao: DateTime.parse(map['dataAtualizacao'] as String),
+    );
+  }
 }

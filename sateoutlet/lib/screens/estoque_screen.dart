@@ -88,15 +88,39 @@ class _EstoqueScreenState extends State<EstoqueScreen> {
   Widget _buildMovelInfo(int idMovel) {
     final movel = HiveService.getMovel(idMovel);
     if (movel == null) {
-      return const Text('Móvel não encontrado', style: TextStyle(color: Colors.red));
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Móvel #$idMovel',
+            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
+          ),
+          const Text(
+            '⚠️ Móvel não encontrado (foi excluído)',
+            style: TextStyle(color: Colors.red, fontSize: 12),
+          ),
+        ],
+      );
     }
     
+    final notaFiscal = HiveService.getNotaFiscal(movel.idNotaFiscal);
+    final notaInfo = notaFiscal != null 
+        ? 'Nota: ${notaFiscal.idNotaFiscal}'
+        : '⚠️ Nota fiscal não encontrada';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Móvel: ${movel.nome}', style: const TextStyle(fontWeight: FontWeight.bold)),
         Text('Tipo: ${movel.tipoMovel}'),
         Text('Preço: R\$ ${movel.precoVenda.toStringAsFixed(2)}'),
+        Text(
+          notaInfo,
+          style: TextStyle(
+            color: notaFiscal != null ? Colors.grey : Colors.red,
+            fontSize: 12,
+          ),
+        ),
       ],
     );
   }

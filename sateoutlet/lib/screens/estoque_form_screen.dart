@@ -78,7 +78,12 @@ class _EstoqueFormScreenState extends State<EstoqueFormScreen> {
         dataAtualizacao: DateTime.now(),
       );
 
-      HiveService.addEstoque(estoque);
+      if (widget.estoque == null) {
+        HiveService.addEstoque(estoque);
+      } else {
+        HiveService.updateEstoque(estoque);
+      }
+      
       Navigator.pop(context);
     }
   }
@@ -138,7 +143,7 @@ class _EstoqueFormScreenState extends State<EstoqueFormScreen> {
               
               const SizedBox(height: 16),
               
-              // DROPDOWN SIMPLIFICADO - Móvel
+              // Dropdown para selecionar móvel
               DropdownButtonFormField<Movel>(
                 value: _movelSelecionado,
                 decoration: const InputDecoration(

@@ -27,7 +27,6 @@ class _NotaFiscalFormScreenState extends State<NotaFiscalFormScreen> {
       _valorController.text = widget.notaFiscal!.valorTotal.toString();
       _dataEmissao = widget.notaFiscal!.dataEmissao;
     } else {
-      // Gerar ID automático para nova nota fiscal
       final notas = HiveService.getAllNotasFiscais();
       final novoId = notas.isEmpty ? 1 : (notas.last.idNotaFiscal + 1);
       _idController.text = novoId.toString();
@@ -57,7 +56,12 @@ class _NotaFiscalFormScreenState extends State<NotaFiscalFormScreen> {
         valorTotal: double.parse(_valorController.text),
       );
 
-      HiveService.addNotaFiscal(notaFiscal);
+      if (widget.notaFiscal == null) {
+        HiveService.addNotaFiscal(notaFiscal);
+      } else {
+        HiveService.updateNotaFiscal(notaFiscal);
+      }
+      
       Navigator.pop(context);
     }
   }
@@ -151,8 +155,7 @@ class _NotaFiscalFormScreenState extends State<NotaFiscalFormScreen> {
                 ),
                 child: const Text('Salvar Nota Fiscal'),
               ),
-
-              const SizedBox(height: 16), // Espaço extra no final
+              const SizedBox(height: 16),
             ],
           ),
         ),

@@ -22,4 +22,23 @@ class NotaFiscal {
     required this.detalhesFornecedor,
     required this.valorTotal,
   });
+
+  // Para Shared Preferences
+  Map<String, dynamic> toMap() {
+    return {
+      'idNotaFiscal': idNotaFiscal,
+      'dataEmissao': dataEmissao.toIso8601String(),
+      'detalhesFornecedor': detalhesFornecedor,
+      'valorTotal': valorTotal,
+    };
+  }
+
+  factory NotaFiscal.fromMap(Map<String, dynamic> map) {
+    return NotaFiscal(
+      idNotaFiscal: map['idNotaFiscal'] as int,
+      dataEmissao: DateTime.parse(map['dataEmissao'] as String),
+      detalhesFornecedor: map['detalhesFornecedor'] as String,
+      valorTotal: (map['valorTotal'] as num).toDouble(),
+    );
+  }
 }

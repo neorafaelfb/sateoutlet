@@ -70,7 +70,12 @@ class _MovelFormScreenState extends State<MovelFormScreen> {
         idNotaFiscal: _notaFiscalSelecionada!.idNotaFiscal,
       );
 
-      HiveService.addMovel(movel);
+      if (widget.movel == null) {
+        HiveService.addMovel(movel);
+      } else {
+        HiveService.updateMovel(movel);
+      }
+      
       Navigator.pop(context);
     }
   }
@@ -192,7 +197,7 @@ class _MovelFormScreenState extends State<MovelFormScreen> {
 
               const SizedBox(height: 16),
 
-              // DROPDOWN SIMPLIFICADO - Nota Fiscal
+              // Dropdown para selecionar nota fiscal
               DropdownButtonFormField<NotaFiscal>(
                 value: _notaFiscalSelecionada,
                 decoration: const InputDecoration(

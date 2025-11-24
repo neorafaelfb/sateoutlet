@@ -53,15 +53,66 @@ class _NotaFiscalScreenState extends State<NotaFiscalScreen> {
             child: const Text('Cancelar'),
           ),
           TextButton(
-            onPressed: () {
-              HiveService.deleteNotaFiscal(id);
-              _carregarNotasFiscais();
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Nota fiscal excluída com sucesso')),
-              );
+            onPressed: () async {
+              try {
+                final moveisVinculados = HiveService.getMoveisPorNotaFiscal(id);
+                
+                if (moveisVinculados.isNotEmpty) {
+                  Navigator.pop(context);
+                  _confirmarExclusaoCascataNotaFiscal(id, moveisVinculados.length);
+                } else {
+                  await HiveService.deleteNotaFiscalSafe(id);
+                  _carregarNotasFiscais();
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Nota fiscal excluída com sucesso')),
+                  );
+                }
+              } catch (e) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Erro ao excluir: ${e.toString()}')),
+                );
+              }
             },
             child: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmarExclusaoCascataNotaFiscal(int id, int quantidadeMoveis) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Exclusão em Cascata Necessária'),
+        content: Text(
+          'Esta nota fiscal possui $quantidadeMoveis móvel(éis) vinculado(s).\n\n'
+          'Deseja excluir a nota fiscal e todos os móveis associados (com seus estoques)?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () async {
+              try {
+                await HiveService.deleteNotaFiscalCascade(id);
+                _carregarNotasFiscais();
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Nota fiscal, móveis e estoques excluídos com sucesso')),
+                );
+              } catch (e) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Erro ao excluir: ${e.toString()}')),
+                );
+              }
+            },
+            child: const Text('Excluir Tudo'),
           ),
         ],
       ),
@@ -92,6 +143,8 @@ class _NotaFiscalScreenState extends State<NotaFiscalScreen> {
               itemCount: _notasFiscais.length,
               itemBuilder: (context, index) {
                 final notaFiscal = _notasFiscais[index];
+                final moveisVinculados = HiveService.getMoveisPorNotaFiscal(notaFiscal.idNotaFiscal);
+                
                 return Card(
                   margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   child: ListTile(
@@ -103,6 +156,10 @@ class _NotaFiscalScreenState extends State<NotaFiscalScreen> {
                         Text('Fornecedor: ${notaFiscal.detalhesFornecedor}'),
                         Text('Data: ${_formatarData(notaFiscal.dataEmissao)}'),
                         Text('Valor Total: R\$ ${notaFiscal.valorTotal.toStringAsFixed(2)}'),
+                        Text(
+                          'Móveis vinculados: ${moveisVinculados.length}',
+                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
                       ],
                     ),
                     trailing: Row(
