@@ -56,10 +56,13 @@ class _MovelScreenState extends State<MovelScreen> {
             onPressed: () async {
               try {
                 final estoquesVinculados = HiveService.getEstoquePorMovel(id);
+                final itensVinculados = HiveService.getAllItensNotaFiscal()
+                    .where((item) => item.idMovel == id)
+                    .toList();
                 
-                if (estoquesVinculados.isNotEmpty) {
+                if (estoquesVinculados.isNotEmpty || itensVinculados.isNotEmpty) {
                   Navigator.pop(context);
-                  _confirmarExclusaoCascataMovel(id, estoquesVinculados.length);
+                  _confirmarExclusaoCascataMovel(id, estoquesVinculados.length, itensVinculados.length);
                 } else {
                   await HiveService.deleteMovelSafe(id);
                   _carregarMoveis();
@@ -82,14 +85,16 @@ class _MovelScreenState extends State<MovelScreen> {
     );
   }
 
-  void _confirmarExclusaoCascataMovel(int id, int quantidadeEstoques) {
+  void _confirmarExclusaoCascataMovel(int id, int quantidadeEstoques, int quantidadeItens) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Exclusão em Cascata Necessária'),
         content: Text(
-          'Este móvel possui $quantidadeEstoques item(ns) em estoque vinculado(s).\n\n'
-          'Deseja excluir o móvel e todos os itens de estoque associados?',
+          'Este móvel possui:\n'
+          '- $quantidadeEstoques item(ns) em estoque\n'
+          '- $quantidadeItens item(ns) em notas fiscais\n\n'
+          'Deseja excluir o móvel e todas as vinculações associadas?',
         ),
         actions: [
           TextButton(
@@ -103,7 +108,7 @@ class _MovelScreenState extends State<MovelScreen> {
                 _carregarMoveis();
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Móvel e estoques excluídos com sucesso')),
+                  const SnackBar(content: Text('Móvel e vinculações excluídos com sucesso')),
                 );
               } catch (e) {
                 Navigator.pop(context);
@@ -124,6 +129,13 @@ class _MovelScreenState extends State<MovelScreen> {
     return estoques.isNotEmpty;
   }
 
+  bool _movelPossuiNotasFiscais(int idMovel) {
+    final itens = HiveService.getAllItensNotaFiscal()
+        .where((item) => item.idMovel == idMovel)
+        .toList();
+    return itens.isNotEmpty;
+  }
+
   String _getInfoEstoque(int idMovel) {
     final estoques = HiveService.getEstoquePorMovel(idMovel);
     if (estoques.isEmpty) {
@@ -131,22 +143,20 @@ class _MovelScreenState extends State<MovelScreen> {
     }
     
     final primeiroEstoque = estoques.first;
-    return 'Estoque: ${primeiroEstoque.localizacaoFisica} - ${primeiroEstoque.status}';
+    return 'Estoque: ${primeiroEstoque.localizacaoFisica}';
   }
 
-  Widget _buildNotaFiscalInfo(int idNotaFiscal) {
-    final notaFiscal = HiveService.getNotaFiscal(idNotaFiscal);
-    if (notaFiscal == null) {
-      return const Text(
-        '⚠️ Nota fiscal não encontrada',
-        style: TextStyle(color: Colors.red, fontSize: 12),
-      );
+  String _getInfoNotasFiscais(int idMovel) {
+    final itens = HiveService.getAllItensNotaFiscal()
+        .where((item) => item.idMovel == idMovel)
+        .toList();
+    
+    if (itens.isEmpty) {
+      return 'Sem notas fiscais';
     }
     
-    return Text(
-      'Nota: ${notaFiscal.idNotaFiscal} - ${notaFiscal.detalhesFornecedor}',
-      style: const TextStyle(fontSize: 12, color: Colors.grey),
-    );
+    final quantidadeTotal = itens.fold(0, (sum, item) => sum + item.quantidade);
+    return 'Em $quantidadeTotal nota(s) fiscal(is)';
   }
 
   @override
@@ -174,23 +184,34 @@ class _MovelScreenState extends State<MovelScreen> {
               itemBuilder: (context, index) {
                 final movel = _moveis[index];
                 final possuiEstoque = _movelPossuiEstoque(movel.idMovel);
+                final possuiNotas = _movelPossuiNotasFiscais(movel.idMovel);
                 final infoEstoque = _getInfoEstoque(movel.idMovel);
+                final infoNotas = _getInfoNotasFiscais(movel.idMovel);
+                final quantidadeTotal = HiveService.getQuantidadeTotalMovel(movel.idMovel);
                 
                 return Card(
                   margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   child: ListTile(
-                    leading: _buildLeadingIcon(possuiEstoque),
+                    leading: _buildLeadingIcon(possuiEstoque, possuiNotas),
                     title: Text(movel.nome),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('Tipo: ${movel.tipoMovel}'),
-                        Text('Preço: R\$ ${movel.precoVenda.toStringAsFixed(2)}'),
+                        Text('Preço Sugerido: R\$ ${movel.precoVendaSugerido.toStringAsFixed(2)}'),
                         Text('Dimensões: ${movel.dimensoes}'),
+                        if (movel.material != null) Text('Material: ${movel.material}'),
+                        if (movel.cor != null) Text('Cor: ${movel.cor}'),
+                        if (movel.fabricante != null) Text('Fabricante: ${movel.fabricante}'),
                         const SizedBox(height: 4),
-                        _buildNotaFiscalInfo(movel.idNotaFiscal),
+                        Text(
+                          'Quantidade Total Comprada: $quantidadeTotal',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
                         const SizedBox(height: 4),
-                        _buildEstoqueInfo(infoEstoque, possuiEstoque),
+                        _buildInfoChip(infoEstoque, possuiEstoque, Colors.green),
+                        const SizedBox(height: 2),
+                        _buildInfoChip(infoNotas, possuiNotas, Colors.blue),
                       ],
                     ),
                     trailing: Row(
@@ -213,7 +234,7 @@ class _MovelScreenState extends State<MovelScreen> {
     );
   }
 
-  Widget _buildLeadingIcon(bool possuiEstoque) {
+  Widget _buildLeadingIcon(bool possuiEstoque, bool possuiNotas) {
     return Stack(
       children: [
         const Icon(Icons.chair, size: 40),
@@ -234,18 +255,35 @@ class _MovelScreenState extends State<MovelScreen> {
               ),
             ),
           ),
+        if (possuiNotas)
+          Positioned(
+            right: 0,
+            top: 0,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: const BoxDecoration(
+                color: Colors.blue,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.receipt,
+                color: Colors.white,
+                size: 12,
+              ),
+            ),
+          ),
       ],
     );
   }
 
-  Widget _buildEstoqueInfo(String info, bool possuiEstoque) {
+  Widget _buildInfoChip(String info, bool possui, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: possuiEstoque ? Colors.green.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+        color: possui ? color.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
         borderRadius: BorderRadius.circular(4),
         border: Border.all(
-          color: possuiEstoque ? Colors.green : Colors.grey,
+          color: possui ? color : Colors.grey,
           width: 1,
         ),
       ),
@@ -253,21 +291,27 @@ class _MovelScreenState extends State<MovelScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            possuiEstoque ? Icons.inventory : Icons.inventory_2,
-            size: 14,
-            color: possuiEstoque ? Colors.green : Colors.grey,
+            _getInfoIcon(info),
+            size: 12,
+            color: possui ? color : Colors.grey,
           ),
           const SizedBox(width: 4),
           Text(
             info,
             style: TextStyle(
-              fontSize: 12,
-              color: possuiEstoque ? Colors.green : Colors.grey,
+              fontSize: 10,
+              color: possui ? color : Colors.grey,
               fontWeight: FontWeight.bold,
             ),
           ),
         ],
       ),
     );
+  }
+
+  IconData _getInfoIcon(String info) {
+    if (info.contains('estoque')) return Icons.inventory;
+    if (info.contains('nota')) return Icons.receipt;
+    return Icons.info;
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/nota_fiscal.dart';
 import '../services/hive_service.dart';
 import 'nota_fiscal_form_screen.dart';
+import 'itens_nota_fiscal_screen.dart';
 
 class NotaFiscalScreen extends StatefulWidget {
   const NotaFiscalScreen({super.key});
@@ -41,6 +42,16 @@ class _NotaFiscalScreenState extends State<NotaFiscalScreen> {
     _carregarNotasFiscais();
   }
 
+  void _verItensNotaFiscal(NotaFiscal notaFiscal) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ItensNotaFiscalScreen(notaFiscal: notaFiscal),
+      ),
+    );
+    _carregarNotasFiscais();
+  }
+
   void _excluirNotaFiscal(int id) {
     showDialog(
       context: context,
@@ -55,11 +66,11 @@ class _NotaFiscalScreenState extends State<NotaFiscalScreen> {
           TextButton(
             onPressed: () async {
               try {
-                final moveisVinculados = HiveService.getMoveisPorNotaFiscal(id);
+                final itensVinculados = HiveService.getItensPorNotaFiscal(id);
                 
-                if (moveisVinculados.isNotEmpty) {
+                if (itensVinculados.isNotEmpty) {
                   Navigator.pop(context);
-                  _confirmarExclusaoCascataNotaFiscal(id, moveisVinculados.length);
+                  _confirmarExclusaoCascataNotaFiscal(id, itensVinculados.length);
                 } else {
                   await HiveService.deleteNotaFiscalSafe(id);
                   _carregarNotasFiscais();
@@ -82,14 +93,14 @@ class _NotaFiscalScreenState extends State<NotaFiscalScreen> {
     );
   }
 
-  void _confirmarExclusaoCascataNotaFiscal(int id, int quantidadeMoveis) {
+  void _confirmarExclusaoCascataNotaFiscal(int id, int quantidadeItens) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Exclusão em Cascata Necessária'),
         content: Text(
-          'Esta nota fiscal possui $quantidadeMoveis móvel(éis) vinculado(s).\n\n'
-          'Deseja excluir a nota fiscal e todos os móveis associados (com seus estoques)?',
+          'Esta nota fiscal possui $quantidadeItens item(ns) vinculado(s).\n\n'
+          'Deseja excluir a nota fiscal e todos os itens associados?',
         ),
         actions: [
           TextButton(
@@ -103,7 +114,7 @@ class _NotaFiscalScreenState extends State<NotaFiscalScreen> {
                 _carregarNotasFiscais();
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Nota fiscal, móveis e estoques excluídos com sucesso')),
+                  const SnackBar(content: Text('Nota fiscal e itens excluídos com sucesso')),
                 );
               } catch (e) {
                 Navigator.pop(context);
@@ -117,6 +128,19 @@ class _NotaFiscalScreenState extends State<NotaFiscalScreen> {
         ],
       ),
     );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'finalizada':
+        return Colors.green;
+      case 'pendente':
+        return Colors.orange;
+      case 'cancelada':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
   }
 
   @override
@@ -143,28 +167,58 @@ class _NotaFiscalScreenState extends State<NotaFiscalScreen> {
               itemCount: _notasFiscais.length,
               itemBuilder: (context, index) {
                 final notaFiscal = _notasFiscais[index];
-                final moveisVinculados = HiveService.getMoveisPorNotaFiscal(notaFiscal.idNotaFiscal);
+                final itensVinculados = HiveService.getItensPorNotaFiscal(notaFiscal.idNotaFiscal);
+                final valorTotalItens = HiveService.calcularValorTotalNota(notaFiscal.idNotaFiscal);
                 
                 return Card(
                   margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   child: ListTile(
                     leading: const Icon(Icons.receipt, size: 40),
-                    title: Text('Nota: ${notaFiscal.idNotaFiscal}'),
+                    title: Text('Nota: ${notaFiscal.numeroNota}'),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Fornecedor: ${notaFiscal.detalhesFornecedor}'),
+                        Text('Fornecedor: ${notaFiscal.razaoSocialFornecedor}'),
                         Text('Data: ${_formatarData(notaFiscal.dataEmissao)}'),
-                        Text('Valor Total: R\$ ${notaFiscal.valorTotal.toStringAsFixed(2)}'),
+                        Text('Valor Total: R\$ ${notaFiscal.valorTotalNota.toStringAsFixed(2)}'),
                         Text(
-                          'Móveis vinculados: ${moveisVinculados.length}',
+                          'Itens: ${itensVinculados.length} (R\$ ${valorTotalItens.toStringAsFixed(2)})',
                           style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Text('Status: '),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: _getStatusColor(notaFiscal.status).withOpacity(0.1),
+                                border: Border.all(color: _getStatusColor(notaFiscal.status)),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                notaFiscal.status,
+                                style: TextStyle(
+                                  color: _getStatusColor(notaFiscal.status),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // Botão de Itens - APENAS para notas com status "Pendente"
+                        if (notaFiscal.status.toLowerCase() == 'pendente')
+                          IconButton(
+                            icon: const Icon(Icons.list, color: Colors.purple),
+                            onPressed: () => _verItensNotaFiscal(notaFiscal),
+                            tooltip: 'Gerenciar Itens',
+                          ),
                         IconButton(
                           icon: const Icon(Icons.edit, color: Colors.blue),
                           onPressed: () => _editarNotaFiscal(notaFiscal),

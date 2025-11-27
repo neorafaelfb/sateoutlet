@@ -4,15 +4,21 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import '../models/movel.dart';
 import '../models/estoque.dart';
 import '../models/nota_fiscal.dart';
+import '../models/item_nota_fiscal.dart';
 import 'storage_service.dart';
+import 'package:path/path.dart' as path;
+import 'dart:io';
+
 
 class HiveService {
   static late Box<Movel> movelBox;
   static late Box<Estoque> estoqueBox;
   static late Box<NotaFiscal> notaFiscalBox;
+  static late Box<ItemNotaFiscal> itemNotaFiscalBox;
 
   static bool _initialized = false;
   static bool _usingFallback = false;
+  static bool _needsMigration = false;
 
   static Future<void> init() async {
     if (_initialized) {
@@ -27,9 +33,9 @@ class HiveService {
       await StorageService.init();
       
       if (!kIsWeb) {
-        final appDocumentDir = await path_provider.getApplicationDocumentsDirectory();
+        final appDocumentDir = await _getDatabaseDirectory();
         Hive.init(appDocumentDir.path);
-        print('📁 Hive Mobile: ${appDocumentDir.path}');
+        print('📁 Hive Directory: ${appDocumentDir.path}');
       } else {
         Hive.init(null);
         print('🌐 Hive Web: Modo null initialization');
@@ -38,8 +44,8 @@ class HiveService {
       // Registrar adaptadores
       _registerAdapters();
 
-      // Abrir boxes
-      await _openBoxesWithRetry();
+      // Tentar abrir boxes com tratamento de erro
+      await _openBoxesWithMigration();
 
       // Verificar dados e restaurar se necessário
       await _checkAndRestoreData();
@@ -56,6 +62,124 @@ class HiveService {
     }
   }
 
+  static Future<void> migrarParaRelease() async {
+  if (kIsWeb) return;
+  
+  try {
+    print('🔄 Iniciando migração para release...');
+    
+    // Obter diretórios
+    final appDocumentDir = await path_provider.getApplicationDocumentsDirectory();
+    final appSupportDir = await path_provider.getApplicationSupportDirectory();
+    final releaseDir = Directory(path.join(appSupportDir.path, 'database'));
+    
+    if (!releaseDir.existsSync()) {
+      releaseDir.createSync(recursive: true);
+    }
+    
+    // Listar arquivos no Documents (debug)
+    final debugFiles = Directory(appDocumentDir.path).listSync();
+    int filesMigrated = 0;
+    
+    for (var file in debugFiles) {
+      if (file is File && file.path.endsWith('.hive')) {
+        final fileName = path.basename(file.path);
+        final releaseFile = File(path.join(releaseDir.path, fileName));
+        
+        // Copiar arquivo para release directory
+        file.copySync(releaseFile.path);
+        filesMigrated++;
+        print('✅ Migrado: $fileName');
+      }
+    }
+    
+    print('🎉 Migração concluída! $filesMigrated arquivos migrados para release.');
+    print('📁 Release directory: ${releaseDir.path}');
+    
+  } catch (e) {
+    print('❌ Erro na migração: $e');
+  }
+}
+
+static Future<void> mostrarInfoDiretorios() async {
+  if (kIsWeb) {
+    print('🌐 Web: Dados no IndexedDB');
+    return;
+  }
+  
+  try {
+    // Verificar modo
+    bool isDebug = false;
+    assert(() {
+      isDebug = true;
+      return true;
+    }());
+    
+    print('🔍 INFORMAÇÕES DE DIRETÓRIOS:');
+    print('   - Modo: ${isDebug ? "DEBUG 🐛" : "RELEASE 🚀"}');
+    
+    // Mostrar todos os diretórios possíveis
+    final appDocumentDir = await path_provider.getApplicationDocumentsDirectory();
+    final appSupportDir = await path_provider.getApplicationSupportDirectory();
+    final tempDir = await path_provider.getTemporaryDirectory();
+    
+    print('   - Documents: ${appDocumentDir.path}');
+    print('   - Application Support: ${appSupportDir.path}');
+    print('   - Temporary: ${tempDir.path}');
+    
+    // Verificar onde estão os arquivos atuais
+    final currentDir = await _getDatabaseDirectory();
+    print('   - Diretório Atual: ${currentDir.path}');
+    
+    // Listar arquivos no diretório atual
+    if (currentDir.existsSync()) {
+      final files = currentDir.listSync();
+      print('   - Arquivos no diretório atual:');
+      for (var file in files) {
+        if (file is File) {
+          final size = file.lengthSync();
+          print('     📄 ${path.basename(file.path)} (${size} bytes)');
+        }
+      }
+    }
+    
+  } catch (e) {
+    print('❌ Erro ao verificar diretórios: $e');
+  }
+}
+
+  /// Define o diretório do banco baseado no ambiente (debug/release)
+  static Future<Directory> _getDatabaseDirectory() async {
+    if (kIsWeb) {
+      throw Exception('Web não suporta filesystem');
+    }
+
+    // Verificar se estamos em modo debug
+    bool isDebug = false;
+    assert(() {
+      isDebug = true;
+      return true;
+    }());
+
+    if (isDebug) {
+      // DEBUG: Usar Documents para facilitar acesso
+      final appDocumentDir = await path_provider.getApplicationDocumentsDirectory();
+      print('🐛 MODO DEBUG: Usando Documents directory');
+      return appDocumentDir;
+    } else {
+      // RELEASE: Usar Application Support (mais seguro)
+      final appSupportDir = await path_provider.getApplicationSupportDirectory();
+      final databaseDir = Directory(path.join(appSupportDir.path, 'database'));
+      
+      if (!databaseDir.existsSync()) {
+        databaseDir.createSync(recursive: true);
+      }
+      
+      print('🚀 MODO RELEASE: Usando Application Support directory');
+      return databaseDir;
+    }
+  }
+
   static void _registerAdapters() {
     try {
       if (!Hive.isAdapterRegistered(0)) {
@@ -67,45 +191,134 @@ class HiveService {
       if (!Hive.isAdapterRegistered(2)) {
         Hive.registerAdapter(NotaFiscalAdapter());
       }
+      if (!Hive.isAdapterRegistered(3)) {
+        Hive.registerAdapter(ItemNotaFiscalAdapter());
+      }
       print('🔧 Adaptadores registrados');
     } catch (e) {
       print('❌ Erro ao registrar adaptadores: $e');
     }
   }
 
-  static Future<void> _openBoxesWithRetry() async {
-    try {
-      movelBox = await Hive.openBox<Movel>('moveis');
-      print('📦 Caixa móveis: ${movelBox.length} itens');
-    } catch (e) {
-      print('❌ Erro ao abrir caixa móveis: $e');
-      movelBox = Hive.box<Movel>('moveis');
-    }
+  // No HiveService
+  static Future<void> resetParaDesenvolvimento() async {
+    print('🧹 RESET COMPLETO PARA DESENVOLVIMENTO...');
 
     try {
-      estoqueBox = await Hive.openBox<Estoque>('estoque');
-      print('📦 Caixa estoque: ${estoqueBox.length} itens');
-    } catch (e) {
-      print('❌ Erro ao abrir caixa estoque: $e');
-      estoqueBox = Hive.box<Estoque>('estoque');
-    }
+      // Fechar todas as boxes
+      await movelBox.close();
+      await estoqueBox.close();
+      await notaFiscalBox.close();
+      await itemNotaFiscalBox.close();
 
-    try {
-      notaFiscalBox = await Hive.openBox<NotaFiscal>('notas_fiscais');
-      print('📦 Caixa notas: ${notaFiscalBox.length} itens');
+      // Deletar todas as boxes do disco
+      await Hive.deleteBoxFromDisk('moveis');
+      await Hive.deleteBoxFromDisk('estoque');
+      await Hive.deleteBoxFromDisk('notas_fiscais');
+      await Hive.deleteBoxFromDisk('itens_nota_fiscal');
+
+      // Limpar Shared Preferences
+      await StorageService.clearAll();
+
+      print('✅ Reset completo concluído!');
+      print('🔄 Reinicializando Hive...');
+
+      // Reinicializar
+      _initialized = false;
+      await init();
     } catch (e) {
-      print('❌ Erro ao abrir caixa notas: $e');
-      notaFiscalBox = Hive.box<NotaFiscal>('notas_fiscais');
+      print('❌ Erro no reset: $e');
+    }
+  }
+
+  // No método _openBoxesWithMigration, substitua por:
+  static Future<void> _openBoxesWithMigration() async {
+    print('🔄 Abrindo boxes com tratamento de migração...');
+
+    // Sempre recriar as boxes para garantir compatibilidade
+    await _recreateBox('moveis');
+    await _recreateBox('estoque');
+    await _recreateBox('notas_fiscais');
+    await _recreateBox('itens_nota_fiscal');
+  }
+
+  static Future<void> _recreateBox(String boxName) async {
+    try {
+      // Fechar se já estiver aberta
+      if (Hive.isBoxOpen(boxName)) {
+        await Hive.box(boxName).close();
+      }
+
+      // Deletar do disco
+      await Hive.deleteBoxFromDisk(boxName);
+
+      // Abrir nova
+      switch (boxName) {
+        case 'moveis':
+          movelBox = await Hive.openBox<Movel>(boxName);
+          break;
+        case 'estoque':
+          estoqueBox = await Hive.openBox<Estoque>(boxName);
+          break;
+        case 'notas_fiscais':
+          notaFiscalBox = await Hive.openBox<NotaFiscal>(boxName);
+          break;
+        case 'itens_nota_fiscal':
+          itemNotaFiscalBox = await Hive.openBox<ItemNotaFiscal>(boxName);
+          break;
+      }
+
+      print('📦 Caixa $boxName recriada: ${_getBoxLength(boxName)} itens');
+    } catch (e) {
+      print('❌ Erro ao recriar caixa $boxName: $e');
+      // Tentar abrir normalmente como fallback
+      try {
+        switch (boxName) {
+          case 'moveis':
+            movelBox = await Hive.openBox<Movel>(boxName);
+            break;
+          case 'estoque':
+            estoqueBox = await Hive.openBox<Estoque>(boxName);
+            break;
+          case 'notas_fiscais':
+            notaFiscalBox = await Hive.openBox<NotaFiscal>(boxName);
+            break;
+          case 'itens_nota_fiscal':
+            itemNotaFiscalBox = await Hive.openBox<ItemNotaFiscal>(boxName);
+            break;
+        }
+      } catch (e2) {
+        print('❌ Erro crítico ao abrir caixa $boxName: $e2');
+        rethrow;
+      }
+    }
+  }
+
+  static int _getBoxLength(String boxName) {
+    switch (boxName) {
+      case 'moveis':
+        return movelBox.length;
+      case 'estoque':
+        return estoqueBox.length;
+      case 'notas_fiscais':
+        return notaFiscalBox.length;
+      case 'itens_nota_fiscal':
+        return itemNotaFiscalBox.length;
+      default:
+        return 0;
     }
   }
 
   static Future<void> _checkAndRestoreData() async {
-    final hiveHasData = movelBox.isNotEmpty || estoqueBox.isNotEmpty || notaFiscalBox.isNotEmpty;
+    final hiveHasData = movelBox.isNotEmpty ||
+        estoqueBox.isNotEmpty ||
+        notaFiscalBox.isNotEmpty;
     final spHasData = StorageService.hasData();
 
     print('🔍 Verificação de dados:');
     print('   - Hive tem dados: $hiveHasData');
     print('   - Shared Preferences tem dados: $spHasData');
+    print('   - Precisa de migração: $_needsMigration');
 
     if (!hiveHasData && spHasData) {
       print('🔄 Restaurando dados do Shared Preferences...');
@@ -113,9 +326,35 @@ class HiveService {
     } else if (!hiveHasData && !spHasData) {
       print('📝 Adicionando dados de exemplo...');
       await _adicionarDadosExemplo();
+    } else if (hiveHasData && _needsMigration) {
+      print('🔄 Migrando dados existentes...');
+      await _migrarDadosExistentes();
     } else {
       print('✅ Dados já existem, fazendo backup...');
       await _backupToFallback();
+    }
+  }
+
+  static Future<void> _migrarDadosExistentes() async {
+    try {
+      print('🔄 Iniciando migração de dados...');
+
+      // Backup dos dados atuais antes da migração
+      await _backupToFallback();
+
+      // Limpar boxes problemáticas
+      await movelBox.clear();
+      await notaFiscalBox.clear();
+      await itemNotaFiscalBox.clear();
+
+      // Restaurar do backup
+      await _restoreFromFallback();
+
+      print('✅ Migração concluída com sucesso!');
+    } catch (e) {
+      print('❌ Erro na migração: $e');
+      print('🔄 Criando dados de exemplo...');
+      await _adicionarDadosExemplo();
     }
   }
 
@@ -126,9 +365,23 @@ class HiveService {
       for (final notaData in notasData) {
         final nota = NotaFiscal(
           idNotaFiscal: notaData['idNotaFiscal'] as int,
+          numeroNota: notaData['numeroNota'] as String? ??
+              notaData['idNotaFiscal'].toString(),
+          serie: notaData['serie'] as String? ?? '1',
           dataEmissao: DateTime.parse(notaData['dataEmissao'] as String),
-          detalhesFornecedor: notaData['detalhesFornecedor'] as String,
-          valorTotal: (notaData['valorTotal'] as num).toDouble(),
+          dataEntrada: DateTime.parse(notaData['dataEntrada'] as String? ??
+              notaData['dataEmissao'] as String),
+          cnpjFornecedor:
+              notaData['cnpjFornecedor'] as String? ?? '00.000.000/0001-00',
+          razaoSocialFornecedor: notaData['razaoSocialFornecedor'] as String? ??
+              notaData['detalhesFornecedor'] as String,
+          valorTotalProdutos:
+              (notaData['valorTotalProdutos'] as num?)?.toDouble() ??
+                  (notaData['valorTotal'] as num).toDouble(),
+          valorTotalNota: (notaData['valorTotalNota'] as num?)?.toDouble() ??
+              (notaData['valorTotal'] as num).toDouble(),
+          tipoFrete: notaData['tipoFrete'] as String? ?? 'CIF',
+          status: notaData['status'] as String? ?? 'Finalizada',
         );
         await notaFiscalBox.put(nota.idNotaFiscal, nota);
       }
@@ -141,10 +394,25 @@ class HiveService {
           tipoMovel: movelData['tipoMovel'] as String,
           nome: movelData['nome'] as String,
           dimensoes: movelData['dimensoes'] as String,
-          precoVenda: (movelData['precoVenda'] as num).toDouble(),
-          idNotaFiscal: movelData['idNotaFiscal'] as int,
+          precoVendaSugerido:
+              (movelData['precoVendaSugerido'] as num?)?.toDouble() ??
+                  (movelData['precoVenda'] as num).toDouble(),
         );
         await movelBox.put(movel.idMovel, movel);
+      }
+
+      // Restaurar Itens Nota Fiscal
+      final itensData = StorageService.loadItensNotaFiscal();
+      for (final itemData in itensData) {
+        final item = ItemNotaFiscal(
+          idItem: itemData['idItem'] as int,
+          idNotaFiscal: itemData['idNotaFiscal'] as int,
+          idMovel: itemData['idMovel'] as int,
+          quantidade: itemData['quantidade'] as int,
+          precoUnitario: (itemData['precoUnitario'] as num).toDouble(),
+          valorTotalItem: (itemData['valorTotalItem'] as num).toDouble(),
+        );
+        await itemNotaFiscalBox.put(item.idItem, item);
       }
 
       // Restaurar Estoques
@@ -155,7 +423,8 @@ class HiveService {
           idMovel: estoqueData['idMovel'] as int,
           localizacaoFisica: estoqueData['localizacaoFisica'] as String,
           status: estoqueData['status'] as String,
-          dataAtualizacao: DateTime.parse(estoqueData['dataAtualizacao'] as String),
+          dataAtualizacao:
+              DateTime.parse(estoqueData['dataAtualizacao'] as String),
         );
         await estoqueBox.put(estoque.idEstoque, estoque);
       }
@@ -169,33 +438,22 @@ class HiveService {
   static Future<void> _backupToFallback() async {
     try {
       // Backup de Notas Fiscais
-      final notasData = notaFiscalBox.values.map((nota) => {
-        'idNotaFiscal': nota.idNotaFiscal,
-        'dataEmissao': nota.dataEmissao.toIso8601String(),
-        'detalhesFornecedor': nota.detalhesFornecedor,
-        'valorTotal': nota.valorTotal,
-      }).toList();
+      final notasData =
+          notaFiscalBox.values.map((nota) => nota.toMap()).toList();
       await StorageService.saveNotasFiscais(notasData);
 
       // Backup de Móveis
-      final moveisData = movelBox.values.map((movel) => {
-        'idMovel': movel.idMovel,
-        'tipoMovel': movel.tipoMovel,
-        'nome': movel.nome,
-        'dimensoes': movel.dimensoes,
-        'precoVenda': movel.precoVenda,
-        'idNotaFiscal': movel.idNotaFiscal,
-      }).toList();
+      final moveisData = movelBox.values.map((movel) => movel.toMap()).toList();
       await StorageService.saveMoveis(moveisData);
 
+      // Backup de Itens Nota Fiscal
+      final itensData =
+          itemNotaFiscalBox.values.map((item) => item.toMap()).toList();
+      await StorageService.saveItensNotaFiscal(itensData);
+
       // Backup de Estoques
-      final estoquesData = estoqueBox.values.map((estoque) => {
-        'idEstoque': estoque.idEstoque,
-        'idMovel': estoque.idMovel,
-        'localizacaoFisica': estoque.localizacaoFisica,
-        'status': estoque.status,
-        'dataAtualizacao': estoque.dataAtualizacao.toIso8601String(),
-      }).toList();
+      final estoquesData =
+          estoqueBox.values.map((estoque) => estoque.toMap()).toList();
       await StorageService.saveEstoques(estoquesData);
 
       print('💾 Backup realizado no Shared Preferences');
@@ -209,18 +467,36 @@ class HiveService {
       // Nota Fiscal 1
       final nota1 = NotaFiscal(
         idNotaFiscal: 1,
+        numeroNota: '000001',
+        serie: '1',
         dataEmissao: DateTime.now(),
-        detalhesFornecedor: 'Madeireira Silva Ltda',
-        valorTotal: 3500.00,
+        dataEntrada: DateTime.now(),
+        cnpjFornecedor: '12.345.678/0001-90',
+        razaoSocialFornecedor: 'Madeireira Silva Ltda',
+        enderecoFornecedor: 'Rua das Madeiras, 123 - Centro',
+        telefoneFornecedor: '(11) 9999-9999',
+        valorTotalProdutos: 3500.00,
+        valorTotalNota: 3500.00,
+        tipoFrete: 'CIF',
+        status: 'Finalizada',
       );
       await addNotaFiscal(nota1);
 
       // Nota Fiscal 2
       final nota2 = NotaFiscal(
         idNotaFiscal: 2,
+        numeroNota: '000002',
+        serie: '1',
         dataEmissao: DateTime.now().subtract(const Duration(days: 5)),
-        detalhesFornecedor: 'Marcenaria Premium S.A',
-        valorTotal: 5200.00,
+        dataEntrada: DateTime.now().subtract(const Duration(days: 3)),
+        cnpjFornecedor: '98.765.432/0001-10',
+        razaoSocialFornecedor: 'Marcenaria Premium S.A',
+        enderecoFornecedor: 'Av. dos Móveis, 456 - Industrial',
+        telefoneFornecedor: '(11) 8888-8888',
+        valorTotalProdutos: 5200.00,
+        valorTotalNota: 5200.00,
+        tipoFrete: 'FOB',
+        status: 'Finalizada',
       );
       await addNotaFiscal(nota2);
 
@@ -230,8 +506,10 @@ class HiveService {
         tipoMovel: 'Sofá',
         nome: 'Sofá Retrátil 3 Lugares Couro',
         dimensoes: '200x90x80 cm',
-        precoVenda: 1899.90,
-        idNotaFiscal: 1,
+        precoVendaSugerido: 1899.90,
+        material: 'Couro sintético',
+        cor: 'Marrom',
+        fabricante: 'MoveisConfort',
       );
       await addMovel(movel1);
 
@@ -240,8 +518,10 @@ class HiveService {
         tipoMovel: 'Mesa',
         nome: 'Mesa de Jantar 6 Lugares Madeira Maciça',
         dimensoes: '180x90x75 cm',
-        precoVenda: 1200.00,
-        idNotaFiscal: 2,
+        precoVendaSugerido: 1200.00,
+        material: 'Madeira maciça',
+        cor: 'Natural',
+        fabricante: 'MadeiraNobre',
       );
       await addMovel(movel2);
 
@@ -250,10 +530,43 @@ class HiveService {
         tipoMovel: 'Cama',
         nome: 'Cama Box Queen Size Casal',
         dimensoes: '198x138x100 cm',
-        precoVenda: 850.00,
-        idNotaFiscal: 1,
+        precoVendaSugerido: 850.00,
+        material: 'Madeira MDF',
+        cor: 'Branco',
+        fabricante: 'DormirBem',
       );
       await addMovel(movel3);
+
+      // Itens Nota Fiscal
+      final item1 = ItemNotaFiscal(
+        idItem: 1,
+        idNotaFiscal: 1,
+        idMovel: 1,
+        quantidade: 2,
+        precoUnitario: 1200.00,
+        valorTotalItem: 2400.00,
+      );
+      await addItemNotaFiscal(item1);
+
+      final item2 = ItemNotaFiscal(
+        idItem: 2,
+        idNotaFiscal: 1,
+        idMovel: 3,
+        quantidade: 1,
+        precoUnitario: 1100.00,
+        valorTotalItem: 1100.00,
+      );
+      await addItemNotaFiscal(item2);
+
+      final item3 = ItemNotaFiscal(
+        idItem: 3,
+        idNotaFiscal: 2,
+        idMovel: 2,
+        quantidade: 3,
+        precoUnitario: 1500.00,
+        valorTotalItem: 4500.00,
+      );
+      await addItemNotaFiscal(item3);
 
       // Estoques
       final estoque1 = Estoque(
@@ -276,9 +589,8 @@ class HiveService {
 
       // Fazer backup
       await _backupToFallback();
-      
+
       print('✅ Dados de exemplo adicionados com sucesso!');
-      
     } catch (e) {
       print('❌ Erro ao adicionar dados de exemplo: $e');
     }
@@ -365,16 +677,76 @@ class HiveService {
     print('✅ Nota Fiscal $id excluída');
   }
 
-  // Métodos auxiliares
-  static List<Estoque> getEstoquePorMovel(int idMovel) {
-    return estoqueBox.values
-        .where((estoque) => estoque.idMovel == idMovel)
+  // CRUD para Item Nota Fiscal
+  static Future<void> addItemNotaFiscal(ItemNotaFiscal item) async {
+    await itemNotaFiscalBox.put(item.idItem, item);
+    await _backupToFallback();
+    print('✅ Item ${item.idItem} adicionado à nota ${item.idNotaFiscal}');
+  }
+
+  static ItemNotaFiscal? getItemNotaFiscal(int id) {
+    return itemNotaFiscalBox.get(id);
+  }
+
+  static List<ItemNotaFiscal> getAllItensNotaFiscal() {
+    return itemNotaFiscalBox.values.toList();
+  }
+
+  static Future<void> updateItemNotaFiscal(ItemNotaFiscal item) async {
+    await itemNotaFiscalBox.put(item.idItem, item);
+    await _backupToFallback();
+    print('✅ Item ${item.idItem} atualizado');
+  }
+
+  static Future<void> deleteItemNotaFiscal(int id) async {
+    await itemNotaFiscalBox.delete(id);
+    await _backupToFallback();
+    print('✅ Item $id excluído');
+  }
+
+  // NOVOS MÉTODOS PARA RELACIONAMENTOS
+  static List<ItemNotaFiscal> getItensPorNotaFiscal(int idNotaFiscal) {
+    return itemNotaFiscalBox.values
+        .where((item) => item.idNotaFiscal == idNotaFiscal)
         .toList();
   }
 
   static List<Movel> getMoveisPorNotaFiscal(int idNotaFiscal) {
+    final itens = getItensPorNotaFiscal(idNotaFiscal);
+    final moveisIds = itens.map((item) => item.idMovel).toSet();
+
     return movelBox.values
-        .where((movel) => movel.idNotaFiscal == idNotaFiscal)
+        .where((movel) => moveisIds.contains(movel.idMovel))
+        .toList();
+  }
+
+  static List<NotaFiscal> getNotasFiscaisPorMovel(int idMovel) {
+    final itens = itemNotaFiscalBox.values
+        .where((item) => item.idMovel == idMovel)
+        .toList();
+    final notasIds = itens.map((item) => item.idNotaFiscal).toSet();
+
+    return notaFiscalBox.values
+        .where((nota) => notasIds.contains(nota.idNotaFiscal))
+        .toList();
+  }
+
+  static double calcularValorTotalNota(int idNotaFiscal) {
+    final itens = getItensPorNotaFiscal(idNotaFiscal);
+    return itens.fold(0.0, (sum, item) => sum + item.valorTotalItem);
+  }
+
+  static int getQuantidadeTotalMovel(int idMovel) {
+    final itens = itemNotaFiscalBox.values
+        .where((item) => item.idMovel == idMovel)
+        .toList();
+    return itens.fold(0, (sum, item) => sum + item.quantidade);
+  }
+
+  // Métodos auxiliares
+  static List<Estoque> getEstoquePorMovel(int idMovel) {
+    return estoqueBox.values
+        .where((estoque) => estoque.idMovel == idMovel)
         .toList();
   }
 
@@ -385,7 +757,7 @@ class HiveService {
   static List<Movel> getMoveisParaEstoque() {
     final todosMoveis = movelBox.values.toList();
     final estoques = estoqueBox.values.toList();
-    
+
     return todosMoveis.where((movel) {
       return !estoques.any((estoque) => estoque.idMovel == movel.idMovel);
     }).toList();
@@ -401,23 +773,27 @@ class HiveService {
 
   // Exclusão segura
   static Future<void> deleteNotaFiscalSafe(int id) async {
-    final moveisVinculados = getMoveisPorNotaFiscal(id);
-    
-    if (moveisVinculados.isNotEmpty) {
-      throw Exception('Não é possível excluir a nota fiscal pois existem ${moveisVinculados.length} móvel(éis) vinculado(s) a ela.');
+    final itensVinculados = getItensPorNotaFiscal(id);
+
+    if (itensVinculados.isNotEmpty) {
+      throw Exception(
+          'Não é possível excluir a nota fiscal pois existem ${itensVinculados.length} item(ns) vinculado(s) a ela.');
     }
-    
+
     await notaFiscalBox.delete(id);
     await _backupToFallback();
   }
 
   static Future<void> deleteMovelSafe(int id) async {
     final estoquesVinculados = getEstoquePorMovel(id);
-    
-    if (estoquesVinculados.isNotEmpty) {
-      throw Exception('Não é possível excluir o móvel pois existem ${estoquesVinculados.length} item(ns) em estoque vinculado(s) a ele.');
+    final itensVinculados =
+        itemNotaFiscalBox.values.where((item) => item.idMovel == id).toList();
+
+    if (estoquesVinculados.isNotEmpty || itensVinculados.isNotEmpty) {
+      throw Exception(
+          'Não é possível excluir o móvel pois existem vinculações com estoque ou notas fiscais.');
     }
-    
+
     await movelBox.delete(id);
     await _backupToFallback();
   }
@@ -428,21 +804,27 @@ class HiveService {
     for (final estoque in estoquesVinculados) {
       await estoqueBox.delete(estoque.idEstoque);
     }
-    
+
+    final itensVinculados =
+        itemNotaFiscalBox.values.where((item) => item.idMovel == id).toList();
+    for (final item in itensVinculados) {
+      await itemNotaFiscalBox.delete(item.idItem);
+    }
+
     await movelBox.delete(id);
     await _backupToFallback();
-    print('✅ Móvel $id e estoques excluídos em cascata');
+    print('✅ Móvel $id, estoques e itens de nota fiscal excluídos em cascata');
   }
 
   static Future<void> deleteNotaFiscalCascade(int id) async {
-    final moveisVinculados = getMoveisPorNotaFiscal(id);
-    for (final movel in moveisVinculados) {
-      await deleteMovelCascade(movel.idMovel);
+    final itensVinculados = getItensPorNotaFiscal(id);
+    for (final item in itensVinculados) {
+      await itemNotaFiscalBox.delete(item.idItem);
     }
-    
+
     await notaFiscalBox.delete(id);
     await _backupToFallback();
-    print('✅ Nota Fiscal $id, móveis e estoques excluídos em cascata');
+    print('✅ Nota Fiscal $id e itens excluídos em cascata');
   }
 
   // Status
@@ -451,6 +833,7 @@ class HiveService {
     print('HIVE - Móveis: ${movelBox.length}');
     print('HIVE - Estoques: ${estoqueBox.length}');
     print('HIVE - Notas Fiscais: ${notaFiscalBox.length}');
+    print('HIVE - Itens Nota Fiscal: ${itemNotaFiscalBox.length}');
     StorageService.printStatus();
     print('Usando Fallback: $_usingFallback');
     print('==================');
@@ -461,15 +844,22 @@ class HiveService {
     print('\n🔍 DEBUG DOS DADOS:');
     print('MÓVEIS:');
     movelBox.values.forEach((movel) {
-      print(' - ${movel.idMovel}: ${movel.nome} (Nota: ${movel.idNotaFiscal})');
+      print(' - ${movel.idMovel}: ${movel.nome}');
     });
     print('ESTOQUES:');
     estoqueBox.values.forEach((estoque) {
-      print(' - ${estoque.idEstoque}: Móvel ${estoque.idMovel} - ${estoque.localizacaoFisica}');
+      print(
+          ' - ${estoque.idEstoque}: Móvel ${estoque.idMovel} - ${estoque.localizacaoFisica}');
     });
     print('NOTAS FISCAIS:');
     notaFiscalBox.values.forEach((nota) {
-      print(' - ${nota.idNotaFiscal}: ${nota.detalhesFornecedor}');
+      print(
+          ' - ${nota.idNotaFiscal}: ${nota.razaoSocialFornecedor} - R\$ ${nota.valorTotalNota}');
+    });
+    print('ITENS NOTA FISCAL:');
+    itemNotaFiscalBox.values.forEach((item) {
+      print(
+          ' - Item ${item.idItem}: Nota ${item.idNotaFiscal}, Móvel ${item.idMovel}, Qtd: ${item.quantidade}');
     });
   }
 
@@ -485,41 +875,54 @@ class HiveService {
     final moveis = StorageService.loadMoveis();
     final estoques = StorageService.loadEstoques();
     final notas = StorageService.loadNotasFiscais();
-    
+    final itens = StorageService.loadItensNotaFiscal();
+
     print('MÓVEIS NO SP (${moveis.length}):');
     for (final movel in moveis) {
       print(' - ${movel['idMovel']}: ${movel['nome']}');
     }
-    
+
     print('ESTOQUES NO SP (${estoques.length}):');
     for (final estoque in estoques) {
-      print(' - ${estoque['idEstoque']}: Móvel ${estoque['idMovel']} - ${estoque['localizacaoFisica']}');
+      print(
+          ' - ${estoque['idEstoque']}: Móvel ${estoque['idMovel']} - ${estoque['localizacaoFisica']}');
     }
-    
+
     print('NOTAS NO SP (${notas.length}):');
     for (final nota in notas) {
-      print(' - ${nota['idNotaFiscal']}: ${nota['detalhesFornecedor']}');
+      print(' - ${nota['idNotaFiscal']}: ${nota['razaoSocialFornecedor']}');
+    }
+
+    print('ITENS NOTA FISCAL NO SP (${itens.length}):');
+    for (final item in itens) {
+      print(
+          ' - Item ${item['idItem']}: Nota ${item['idNotaFiscal']}, Móvel ${item['idMovel']}, Qtd: ${item['quantidade']}');
     }
   }
 
   static void debugRestorationInfo() {
     print('\n🔍 INFO RESTAURAÇÃO:');
-    final hiveHasData = movelBox.isNotEmpty || estoqueBox.isNotEmpty || notaFiscalBox.isNotEmpty;
+    final hiveHasData = movelBox.isNotEmpty ||
+        estoqueBox.isNotEmpty ||
+        notaFiscalBox.isNotEmpty;
     final spHasData = StorageService.hasData();
-    
+
     print('- Hive tem dados: $hiveHasData');
     print('- Shared Preferences tem dados: $spHasData');
     print('- Móveis no Hive: ${movelBox.length}');
     print('- Estoques no Hive: ${estoqueBox.length}');
     print('- Notas no Hive: ${notaFiscalBox.length}');
-    
+    print('- Itens Nota Fiscal no Hive: ${itemNotaFiscalBox.length}');
+
     final moveisSP = StorageService.loadMoveis();
     final estoquesSP = StorageService.loadEstoques();
     final notasSP = StorageService.loadNotasFiscais();
-    
+    final itensSP = StorageService.loadItensNotaFiscal();
+
     print('- Móveis no SP: ${moveisSP.length}');
     print('- Estoques no SP: ${estoquesSP.length}');
     print('- Notas no SP: ${notasSP.length}');
+    print('- Itens Nota Fiscal no SP: ${itensSP.length}');
     print('- Usando Fallback: $_usingFallback');
   }
 
@@ -527,6 +930,7 @@ class HiveService {
     await movelBox.clear();
     await estoqueBox.clear();
     await notaFiscalBox.clear();
+    await itemNotaFiscalBox.clear();
     await StorageService.clearAll();
     print('🗑️ TODOS os dados foram limpos (Hive + Shared Preferences)');
   }

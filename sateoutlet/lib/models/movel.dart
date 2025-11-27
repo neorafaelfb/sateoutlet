@@ -17,18 +17,32 @@ class Movel {
   final String dimensoes;
   
   @HiveField(4)
-  final double precoVenda;
+  final double precoVendaSugerido;
   
   @HiveField(5)
-  final int idNotaFiscal;
+  final String? codigoBarras;
+  
+  @HiveField(6)
+  final String? material;
+  
+  @HiveField(7)
+  final String? cor;
+  
+  @HiveField(8)
+  final String? fabricante;
+
+  // REMOVIDO: idNotaFiscal
 
   Movel({
     required this.idMovel,
     required this.tipoMovel,
     required this.nome,
     required this.dimensoes,
-    required this.precoVenda,
-    required this.idNotaFiscal,
+    required this.precoVendaSugerido,
+    this.codigoBarras,
+    this.material,
+    this.cor,
+    this.fabricante,
   });
 
   // Para Shared Preferences
@@ -38,8 +52,11 @@ class Movel {
       'tipoMovel': tipoMovel,
       'nome': nome,
       'dimensoes': dimensoes,
-      'precoVenda': precoVenda,
-      'idNotaFiscal': idNotaFiscal,
+      'precoVendaSugerido': precoVendaSugerido,
+      'codigoBarras': codigoBarras,
+      'material': material,
+      'cor': cor,
+      'fabricante': fabricante,
     };
   }
 
@@ -49,8 +66,11 @@ class Movel {
       tipoMovel: map['tipoMovel'] as String,
       nome: map['nome'] as String,
       dimensoes: map['dimensoes'] as String,
-      precoVenda: (map['precoVenda'] as num).toDouble(),
-      idNotaFiscal: map['idNotaFiscal'] as int,
+      precoVendaSugerido: (map['precoVendaSugerido'] as num).toDouble(),
+      codigoBarras: map['codigoBarras'] as String?,
+      material: map['material'] as String?,
+      cor: map['cor'] as String?,
+      fabricante: map['fabricante'] as String?,
     );
   }
 }

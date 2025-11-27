@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../models/movel.dart';
-import '../models/nota_fiscal.dart';
 import '../services/hive_service.dart';
 
 class MovelFormScreen extends StatefulWidget {
@@ -19,55 +18,52 @@ class _MovelFormScreenState extends State<MovelFormScreen> {
   final _nomeController = TextEditingController();
   final _dimensoesController = TextEditingController();
   final _precoController = TextEditingController();
-  
-  NotaFiscal? _notaFiscalSelecionada;
-  List<NotaFiscal> _notasFiscaisDisponiveis = [];
+  final _codigoBarrasController = TextEditingController();
+  final _materialController = TextEditingController();
+  final _corController = TextEditingController();
+  final _fabricanteController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _carregarNotasFiscais();
-    
     if (widget.movel != null) {
-      _idController.text = widget.movel!.idMovel.toString();
-      _tipoController.text = widget.movel!.tipoMovel;
-      _nomeController.text = widget.movel!.nome;
-      _dimensoesController.text = widget.movel!.dimensoes;
-      _precoController.text = widget.movel!.precoVenda.toString();
-      
-      final notaFiscal = HiveService.getNotaFiscal(widget.movel!.idNotaFiscal);
-      if (notaFiscal != null) {
-        _notaFiscalSelecionada = notaFiscal;
-      }
+      _preencherFormularioExistente();
     } else {
-      final moveis = HiveService.getAllMoveis();
-      final novoId = moveis.isEmpty ? 1 : (moveis.last.idMovel + 1);
-      _idController.text = novoId.toString();
+      _gerarNovoId();
     }
   }
 
-  void _carregarNotasFiscais() {
-    setState(() {
-      _notasFiscaisDisponiveis = HiveService.getAllNotasFiscais();
-    });
+  void _preencherFormularioExistente() {
+    final movel = widget.movel!;
+    _idController.text = movel.idMovel.toString();
+    _tipoController.text = movel.tipoMovel;
+    _nomeController.text = movel.nome;
+    _dimensoesController.text = movel.dimensoes;
+    _precoController.text = movel.precoVendaSugerido.toString();
+    _codigoBarrasController.text = movel.codigoBarras ?? '';
+    _materialController.text = movel.material ?? '';
+    _corController.text = movel.cor ?? '';
+    _fabricanteController.text = movel.fabricante ?? '';
+  }
+
+  void _gerarNovoId() {
+    final moveis = HiveService.getAllMoveis();
+    final novoId = moveis.isEmpty ? 1 : (moveis.last.idMovel + 1);
+    _idController.text = novoId.toString();
   }
 
   void _salvarMovel() {
     if (_formKey.currentState!.validate()) {
-      if (_notaFiscalSelecionada == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Por favor, selecione uma nota fiscal')),
-        );
-        return;
-      }
-
       final movel = Movel(
         idMovel: int.parse(_idController.text),
         tipoMovel: _tipoController.text,
         nome: _nomeController.text,
         dimensoes: _dimensoesController.text,
-        precoVenda: double.parse(_precoController.text),
-        idNotaFiscal: _notaFiscalSelecionada!.idNotaFiscal,
+        precoVendaSugerido: double.parse(_precoController.text),
+        codigoBarras: _codigoBarrasController.text.isNotEmpty ? _codigoBarrasController.text : null,
+        material: _materialController.text.isNotEmpty ? _materialController.text : null,
+        cor: _corController.text.isNotEmpty ? _corController.text : null,
+        fabricante: _fabricanteController.text.isNotEmpty ? _fabricanteController.text : null,
       );
 
       if (widget.movel == null) {
@@ -78,37 +74,6 @@ class _MovelFormScreenState extends State<MovelFormScreen> {
       
       Navigator.pop(context);
     }
-  }
-
-  Widget _buildNotaFiscalInfo() {
-    if (_notaFiscalSelecionada == null) {
-      return const SizedBox();
-    }
-
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Nota Fiscal Selecionada:',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text('Número: ${_notaFiscalSelecionada!.idNotaFiscal}'),
-            Text('Fornecedor: ${_notaFiscalSelecionada!.detalhesFornecedor}'),
-            Text('Data: ${_formatarData(_notaFiscalSelecionada!.dataEmissao)}'),
-            Text('Valor Total: R\$ ${_notaFiscalSelecionada!.valorTotal.toStringAsFixed(2)}'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _formatarData(DateTime data) {
-    return '${data.day}/${data.month}/${data.year}';
   }
 
   @override
@@ -184,8 +149,9 @@ class _MovelFormScreenState extends State<MovelFormScreen> {
               TextFormField(
                 controller: _precoController,
                 decoration: const InputDecoration(
-                  labelText: 'Preço de Venda',
+                  labelText: 'Preço de Venda Sugerido',
                   border: OutlineInputBorder(),
+                  prefixText: 'R\$ ',
                 ),
                 keyboardType: TextInputType.number,
                 validator: (value) {
@@ -197,36 +163,45 @@ class _MovelFormScreenState extends State<MovelFormScreen> {
 
               const SizedBox(height: 16),
 
-              // Dropdown para selecionar nota fiscal
-              DropdownButtonFormField<NotaFiscal>(
-                value: _notaFiscalSelecionada,
+              // Campos opcionais
+              TextFormField(
+                controller: _codigoBarrasController,
                 decoration: const InputDecoration(
-                  labelText: 'Selecionar Nota Fiscal',
+                  labelText: 'Código de Barras (Opcional)',
                   border: OutlineInputBorder(),
                 ),
-                items: _notasFiscaisDisponiveis.map((NotaFiscal notaFiscal) {
-                  return DropdownMenuItem<NotaFiscal>(
-                    value: notaFiscal,
-                    child: Text(
-                      'Nota ${notaFiscal.idNotaFiscal} - ${notaFiscal.detalhesFornecedor}',
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  );
-                }).toList(),
-                onChanged: (NotaFiscal? newValue) {
-                  setState(() {
-                    _notaFiscalSelecionada = newValue;
-                  });
-                },
-                validator: (value) {
-                  if (value == null) return 'Selecione uma nota fiscal';
-                  return null;
-                },
-                isExpanded: true,
               ),
 
               const SizedBox(height: 16),
-              _buildNotaFiscalInfo(),
+
+              TextFormField(
+                controller: _materialController,
+                decoration: const InputDecoration(
+                  labelText: 'Material (Opcional)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              TextFormField(
+                controller: _corController,
+                decoration: const InputDecoration(
+                  labelText: 'Cor (Opcional)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              TextFormField(
+                controller: _fabricanteController,
+                decoration: const InputDecoration(
+                  labelText: 'Fabricante (Opcional)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+
               const SizedBox(height: 20),
               
               ElevatedButton(

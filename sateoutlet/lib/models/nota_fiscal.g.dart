@@ -18,24 +18,60 @@ class NotaFiscalAdapter extends TypeAdapter<NotaFiscal> {
     };
     return NotaFiscal(
       idNotaFiscal: fields[0] as int,
-      dataEmissao: fields[1] as DateTime,
-      detalhesFornecedor: fields[2] as String,
-      valorTotal: fields[3] as double,
+      numeroNota: fields[1] as String,
+      serie: fields[2] as String,
+      dataEmissao: fields[3] as DateTime,
+      dataEntrada: fields[4] as DateTime,
+      cnpjFornecedor: fields[5] as String,
+      razaoSocialFornecedor: fields[6] as String,
+      enderecoFornecedor: fields[7] as String?,
+      telefoneFornecedor: fields[8] as String?,
+      valorTotalProdutos: fields[9] as double,
+      valorTotalNota: fields[10] as double,
+      valorFrete: fields[11] as double?,
+      valorSeguro: fields[12] as double?,
+      outrasDespesas: fields[13] as double?,
+      tipoFrete: fields[14] as String,
+      status: fields[15] as String,
     );
   }
 
   @override
   void write(BinaryWriter writer, NotaFiscal obj) {
     writer
-      ..writeByte(4)
+      ..writeByte(16)
       ..writeByte(0)
       ..write(obj.idNotaFiscal)
       ..writeByte(1)
-      ..write(obj.dataEmissao)
+      ..write(obj.numeroNota)
       ..writeByte(2)
-      ..write(obj.detalhesFornecedor)
+      ..write(obj.serie)
       ..writeByte(3)
-      ..write(obj.valorTotal);
+      ..write(obj.dataEmissao)
+      ..writeByte(4)
+      ..write(obj.dataEntrada)
+      ..writeByte(5)
+      ..write(obj.cnpjFornecedor)
+      ..writeByte(6)
+      ..write(obj.razaoSocialFornecedor)
+      ..writeByte(7)
+      ..write(obj.enderecoFornecedor)
+      ..writeByte(8)
+      ..write(obj.telefoneFornecedor)
+      ..writeByte(9)
+      ..write(obj.valorTotalProdutos)
+      ..writeByte(10)
+      ..write(obj.valorTotalNota)
+      ..writeByte(11)
+      ..write(obj.valorFrete)
+      ..writeByte(12)
+      ..write(obj.valorSeguro)
+      ..writeByte(13)
+      ..write(obj.outrasDespesas)
+      ..writeByte(14)
+      ..write(obj.tipoFrete)
+      ..writeByte(15)
+      ..write(obj.status);
   }
 
   @override

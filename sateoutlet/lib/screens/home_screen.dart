@@ -34,9 +34,11 @@ class HomeScreen extends StatelessWidget {
                   'Móveis',
                   Icons.chair,
                   Colors.blue,
+                  'Cadastro de produtos',
                   () => Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const MovelScreen()),
+                    MaterialPageRoute(
+                        builder: (context) => const MovelScreen()),
                   ),
                 ),
                 _buildMenuCard(
@@ -44,9 +46,11 @@ class HomeScreen extends StatelessWidget {
                   'Estoque',
                   Icons.inventory,
                   Colors.green,
+                  'Controle de estoque',
                   () => Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const EstoqueScreen()),
+                    MaterialPageRoute(
+                        builder: (context) => const EstoqueScreen()),
                   ),
                 ),
                 _buildMenuCard(
@@ -54,71 +58,124 @@ class HomeScreen extends StatelessWidget {
                   'Notas Fiscais',
                   Icons.receipt,
                   Colors.orange,
+                  'Entrada de mercadorias',
                   () => Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const NotaFiscalScreen()),
+                    MaterialPageRoute(
+                        builder: (context) => const NotaFiscalScreen()),
                   ),
                 ),
+                /*
                 _buildMenuCard(
                   context,
                   'Relatórios',
                   Icons.analytics,
                   Colors.purple,
+                  'Em desenvolvimento',
                   () {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Funcionalidade em desenvolvimento')),
+                      const SnackBar(
+                          content: Text('Funcionalidade em desenvolvimento')),
                     );
                   },
-                ),
+                ),*/
                 // Debug Menu
+                /*
                 _buildMenuCard(
                   context,
-                  'Debug SP',
+                  'Status Sistema',
                   Icons.storage,
                   Colors.purple,
+                  'Ver status do banco',
                   () {
-                    HiveService.debugSharedPreferences();
+                    HiveService.printStatus();
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Shared Preferences impresso no console')),
+                      const SnackBar(
+                          content: Text('Status impresso no console')),
                     );
                   },
-                ),
+                ),*/
+                /*
                 _buildMenuCard(
                   context,
                   'Forçar Restauração',
                   Icons.restore,
                   Colors.red,
+                  'Restaurar do backup',
                   () async {
                     await HiveService.forceRestoreFromBackup();
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Restauração forçada executada')),
+                      const SnackBar(
+                          content: Text('Restauração forçada executada')),
                     );
                   },
-                ),
+                ),*/
+                // No home_screen.dart, adicione este card:
+                /*
                 _buildMenuCard(
                   context,
-                  'Info Restauração',
-                  Icons.info,
-                  Colors.amber,
-                  () {
-                    HiveService.debugRestorationInfo();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Info restauração no console')),
-                    );
-                  },
-                ),
-                _buildMenuCard(
-                  context,
-                  'Limpar Tudo',
-                  Icons.delete_forever,
-                  Colors.red[900]!,
+                  'Reset Desenvolvimento',
+                  Icons.refresh,
+                  Colors.red,
+                  'Limpar todos os dados',
                   () async {
-                    await HiveService.clearAllData();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Todos os dados foram limpos')),
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Reset Completo'),
+                        content: const Text(
+                            'Tem certeza que deseja limpar TODOS os dados? Esta ação não pode ser desfeita.'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Cancelar'),
+                          ),
+                          TextButton(
+                            onPressed: () async {
+                              Navigator.pop(context);
+                              await HiveService.resetParaDesenvolvimento();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text('Reset completo realizado')),
+                              );
+                            },
+                            child: const Text('Resetar Tudo'),
+                          ),
+                        ],
+                      ),
                     );
                   },
-                ),
+                ),*/
+                /*
+                _buildMenuCard(
+  context,
+  'Info Diretórios',
+  Icons.folder,
+  Colors.brown,
+  'Ver locais do banco',
+  () {
+    HiveService.mostrarInfoDiretorios();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Info diretórios no console')),
+    );
+  },
+),
+*/
+/*
+_buildMenuCard(
+  context,
+  'Migrar Release',
+  Icons.upgrade,
+  Colors.purple,
+  'Preparar para release',
+  () async {
+    await HiveService.migrarParaRelease();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Migração para release iniciada')),
+    );
+  },
+),
+*/
               ],
             ),
           );
@@ -132,6 +189,7 @@ class HomeScreen extends StatelessWidget {
     String title,
     IconData icon,
     Color color,
+    String subtitle,
     VoidCallback onTap,
   ) {
     return Card(
@@ -151,6 +209,15 @@ class HomeScreen extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.grey[600],
                 ),
               ),
             ],

@@ -21,15 +21,18 @@ class MovelAdapter extends TypeAdapter<Movel> {
       tipoMovel: fields[1] as String,
       nome: fields[2] as String,
       dimensoes: fields[3] as String,
-      precoVenda: fields[4] as double,
-      idNotaFiscal: fields[5] as int,
+      precoVendaSugerido: fields[4] as double,
+      codigoBarras: fields[5] as String?,
+      material: fields[6] as String?,
+      cor: fields[7] as String?,
+      fabricante: fields[8] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, Movel obj) {
     writer
-      ..writeByte(6)
+      ..writeByte(9)
       ..writeByte(0)
       ..write(obj.idMovel)
       ..writeByte(1)
@@ -39,9 +42,15 @@ class MovelAdapter extends TypeAdapter<Movel> {
       ..writeByte(3)
       ..write(obj.dimensoes)
       ..writeByte(4)
-      ..write(obj.precoVenda)
+      ..write(obj.precoVendaSugerido)
       ..writeByte(5)
-      ..write(obj.idNotaFiscal);
+      ..write(obj.codigoBarras)
+      ..writeByte(6)
+      ..write(obj.material)
+      ..writeByte(7)
+      ..write(obj.cor)
+      ..writeByte(8)
+      ..write(obj.fabricante);
   }
 
   @override
